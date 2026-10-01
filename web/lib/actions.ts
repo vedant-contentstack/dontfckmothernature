@@ -18,8 +18,10 @@ export type DailyAction = {
   kind: "daily";
   category: Category;
   name: string;
-  per: Saving;      // per logged instance
+  per: Saving;      // per logged instance (India values for travel; see `drive`)
   cap: number;      // max instances per day
+  // Travel instead of driving: CO2 = (country car kg/km − alternative kg/passenger-km) × km.
+  drive?: { km: number; alternative: number };
   note: string;
 };
 

@@ -173,7 +173,7 @@ water (L) = kWh × (cooling water per kWh ÷ PUE + water used to generate each k
                 </tbody>
               </table>
             </div>
-            <p className="muted small">Sourced for India (CPHEEO, BEE 2024) and the US (EPA WaterSense, EIA 2023). Other countries use rough placeholders.</p>
+            <p className="muted small">Water: national statistics (2021–2025). Electricity: Eurostat, EIA, Statistics Canada and national energy agencies (mostly 2024). CO₂: fossil CO₂ per person, Global Carbon Project 2024 via Our World in Data. Less certain: India’s water is a supply norm, Japan’s is Tokyo, Australia and UAE electricity and UAE water are proxies, and the world water figure is municipal withdrawal.</p>
           </div>
         </details>
 
