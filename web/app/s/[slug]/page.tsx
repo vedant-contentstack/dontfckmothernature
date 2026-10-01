@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: PageProps<"/s/[slug]">) {
   const d = await loadShared((await params).slug);
-  return { title: d ? `${HEADLINE[d.state]} · dontfckmothernature` : "dontfckmothernature" };
+  return { title: d ? HEADLINE[d.state] : "Shared balance" };
 }
 
 export default async function SharedPage({ params }: PageProps<"/s/[slug]">) {

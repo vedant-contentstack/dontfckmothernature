@@ -9,7 +9,7 @@ import {
 import { num } from "@/lib/format";
 import { CUSTOM_SHARE } from "@/lib/savings";
 
-export const metadata: Metadata = { title: "Method · dontfckmothernature" };
+export const metadata: Metadata = { title: "Method" };
 
 const EXAMPLE = { model: "claude-sonnet-4-5", input_tokens: 200_000, output_tokens: 50_000, cache_write_tokens: 0, cache_read_tokens: 2_000_000 };
 

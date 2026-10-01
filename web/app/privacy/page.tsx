@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Header } from "@/components/Header";
 import { LinkInfo } from "@/components/LinkInfo";
 
-export const metadata: Metadata = { title: "Privacy · dontfckmothernature" };
+export const metadata: Metadata = { title: "Privacy" };
 
 const COLLECTED = [
   ["Token counts", "Input, output, cache-write and cache-read tokens, per model and per day", "To work out energy, CO₂ and water"],
