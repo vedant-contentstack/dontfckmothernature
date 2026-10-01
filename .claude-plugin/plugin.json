@@ -1,6 +1,6 @@
 {
   "name": "dontfckmothernature",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "After every response, syncs your Claude Code token counts and shows the water, energy and CO2 behind them.",
   "license": "MIT"
 }

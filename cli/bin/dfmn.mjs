@@ -32,7 +32,7 @@ const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(HOME, ".claude");
 const CODEX_DIR = process.env.CODEX_HOME || path.join(HOME, ".codex");
 const SELF = fileURLToPath(import.meta.url);
 const BATCH = 500;
-const STATE_VERSION = 2; // bump to force a full rescan after the upload format changes
+const STATE_VERSION = 3; // bump to force a full rescan after the upload format changes
 
 // ---------- small helpers ----------
 
@@ -88,10 +88,14 @@ function parseClaude(file) {
   const buckets = new Map();
   for (const { model, u, ts } of messages.values()) {
     const r = bucket(buckets, model, ts);
+    const fresh = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+    const cached = u.cache_read_input_tokens || 0;
     r.input_tokens += u.input_tokens || 0;
     r.output_tokens += u.output_tokens || 0;
     r.cache_write_tokens += u.cache_creation_input_tokens || 0;
-    r.cache_read_tokens += u.cache_read_input_tokens || 0;
+    r.cache_read_tokens += cached;
+    r.cache_x_new += cached * fresh;
+    r.cache_x_out += cached * (u.output_tokens || 0);
     stamp(r, ts);
   }
   return [...buckets.values()];
@@ -119,10 +123,21 @@ function parseCodex(file) {
     const cached = d("cached_input_tokens");
     const written = d("cache_write_input_tokens");
     const r = bucket(buckets, model, e.timestamp);
-    r.input_tokens += Math.max(0, d("input_tokens") - cached - written);
+    const uncached = Math.max(0, d("input_tokens") - cached - written);
+    r.input_tokens += uncached;
     r.output_tokens += d("output_tokens");
     r.cache_read_tokens += cached;
     r.cache_write_tokens += written;
+    // Products need one request's numbers; a gap between two totals can span several requests.
+    const last = p.info?.last_token_usage;
+    if (last) {
+      const lc = last.cached_input_tokens || 0;
+      r.cache_x_new += lc * Math.max(0, (last.input_tokens || 0) - lc);
+      r.cache_x_out += lc * (last.output_tokens || 0);
+    } else {
+      r.cache_x_new += cached * (uncached + written);
+      r.cache_x_out += cached * d("output_tokens");
+    }
     stamp(r, e.timestamp);
   }
   return [...buckets.values()];
@@ -135,7 +150,7 @@ function bucket(buckets, model, ts) {
   const key = `${model}|${day}`;
   let r = buckets.get(key);
   if (!r) {
-    r = { model, day, input_tokens: 0, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, first_at: t, last_at: t };
+    r = { model, day, input_tokens: 0, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, cache_x_new: 0, cache_x_out: 0, first_at: t, last_at: t };
     buckets.set(key, r);
   }
   return r;

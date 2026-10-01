@@ -9,6 +9,8 @@ type Row = {
   output_tokens: number;
   cache_write_tokens: number;
   cache_read_tokens: number;
+  cache_x_new?: number; // Σ cache_read × new tokens per request; sent by CLI 0.3+
+  cache_x_out?: number; // Σ cache_read × output tokens per request
   first_at: string;
   last_at: string;
 };
@@ -24,6 +26,7 @@ function valid(r: Partial<Row>): r is Row {
     typeof r.model === "string" && r.model.length > 0 && r.model.length <= 80 &&
     typeof r.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.day) &&
     COUNT_FIELDS.every((f) => Number.isSafeInteger(r[f]) && (r[f] as number) >= 0) &&
+    (["cache_x_new", "cache_x_out"] as const).every((f) => r[f] === undefined || (Number.isFinite(r[f]) && (r[f] as number) >= 0)) &&
     typeof r.first_at === "string" && !Number.isNaN(Date.parse(r.first_at)) &&
     typeof r.last_at === "string" && !Number.isNaN(Date.parse(r.last_at))
   );

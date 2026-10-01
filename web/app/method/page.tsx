@@ -4,7 +4,7 @@ import { Header } from "@/components/Header";
 import { DAILY, ONETIME, type Saving } from "@/lib/actions";
 import { COUNTRIES } from "@/lib/countries";
 import {
-  BANDS, CACHE_WRITE, CARBON_G_PER_KWH, R_CACHE_READ, R_IN, TIERS, WATER_L_PER_KWH, usageImpact,
+  BANDS, CACHE_J_PER_PAIR, CARBON_G_PER_KWH, FACILITY_OVERHEAD, R_IN, TIERS, TYPICAL_REQUEST, WATER_L_PER_KWH, usageImpact,
 } from "@/lib/footprint";
 import { num } from "@/lib/format";
 import { CUSTOM_SHARE } from "@/lib/savings";
@@ -44,6 +44,7 @@ export default function Method() {
           <summary>Show details</summary>
           <div className="more-body">
             <ul>
+              <li>For cached tokens, the plugin also adds up, per request, cached tokens × new tokens and cached tokens × output tokens.</li>
               <li><strong>Claude Code</strong> writes the token usage of each response next to it. A response can span several lines that repeat the same usage, so each one is counted once by its message ID.</li>
               <li><strong>Codex</strong> writes a running total after every turn. The difference between two totals is that turn’s usage. Cached input is inside input there, so it is subtracted.</li>
               <li>Tokens are added up per model and per day. A prompt that adds 4,000 tokens moves the stored value from 10,000 to 14,000; sending the same file again changes nothing.</li>
@@ -54,26 +55,27 @@ export default function Method() {
 
         <h2>2. Tokens to energy</h2>
         <p>
-          Output tokens cost the most energy. Input tokens count for about 40% of an output token, and cached tokens for much less,
-          based on measured serving throughput. The weighted total is multiplied by an energy figure for the model’s size.
+          Output tokens cost the most energy, and input tokens about 40% of an output token, based on measured serving throughput. A
+          cached token is not processed again, but in every request the new tokens attend to it and each output token reads it, so its
+          cost is worked out per request from your logs.
         </p>
         <details className="more">
           <summary>Show the formula and factors</summary>
           <div className="more-body">
             <pre className="box formula">
-{`weighted tokens = output
-                + input × r_in
-                + cache write × r_in × ${CACHE_WRITE}
-                + cache read × r_in × r_cache
+{`fresh tokens energy (Wh) = (output + (input + cache write) × r_in) ÷ 1,000 × Wh per 1K output tokens
 
-energy (Wh)     = weighted tokens ÷ 1,000 × Wh per 1K output tokens`}
+cached tokens energy (J)  = Σ cache read × new tokens   × J per new–cached pair
+                          + Σ cache read × output tokens × J per output–cached pair
+                          × ${FACILITY_OVERHEAD} for data-centre overhead, scaled by model size`}
             </pre>
             <div className="box table-wrap">
               <table>
-                <thead><tr><th>Weight</th>{BANDS.map((b) => <th key={b} className="r">{b}</th>)}</tr></thead>
+                <thead><tr><th>Factor</th>{BANDS.map((b) => <th key={b} className="r">{b}</th>)}</tr></thead>
                 <tbody>
                   <tr><td>r_in (input token vs output token)</td>{BANDS.map((b) => <td key={b} className="r">{R_IN[b]}</td>)}</tr>
-                  <tr><td>r_cache (cache read vs input token)</td>{BANDS.map((b) => <td key={b} className="r">{R_CACHE_READ[b]}</td>)}</tr>
+                  <tr><td>µJ per new–cached pair (Opus size)</td>{BANDS.map((b) => <td key={b} className="r">{fmt(CACHE_J_PER_PAIR[b].fresh * 1e6, 1)}</td>)}</tr>
+                  <tr><td>µJ per output–cached pair (Opus size)</td>{BANDS.map((b) => <td key={b} className="r">{fmt(CACHE_J_PER_PAIR[b].output * 1e6, 1)}</td>)}</tr>
                 </tbody>
               </table>
             </div>
@@ -90,8 +92,9 @@ energy (Wh)     = weighted tokens ÷ 1,000 × Wh per 1K output tokens`}
             <p className="muted small">
               Energy per token comes from ML.ENERGY measurements of large open models (DeepSeek-V3.1, Llama 405B, Qwen3-235B) at realistic
               batch sizes, DeepSeek’s published production numbers, and Microsoft research’s per-query spread, which sets the high. The input
-              weight comes from prefill versus decode throughput in DeepSeek and SGLang serving. The cache weight is a first-principles
-              estimate of attention over cached context. Check: a 500-token Sonnet reply is about 0.23 Wh at mid, close to Google’s published
+              weight comes from prefill versus decode throughput in DeepSeek and SGLang serving. Cached-token energy is a first-principles
+              estimate from attention compute and memory reads; older plugin versions that don’t send per-request data assume a typical
+              request of {TYPICAL_REQUEST.fresh.toLocaleString("en-US")} new and {TYPICAL_REQUEST.output} output tokens. Check: a 500-token Sonnet reply is about 0.23 Wh at mid, close to Google’s published
               0.24 Wh median prompt.
             </p>
           </div>
@@ -188,7 +191,7 @@ water (L) = kWh × (cooling water per kWh ÷ PUE + water used to generate each k
         <h2>5. What is uncertain</h2>
         <ul>
           <li>Model sizes and hardware aren’t published, so even with measured data the high is several times the low.</li>
-          <li>The cached-token weight is a first-principles estimate; no one has published a production measurement.</li>
+          <li>Cached-token energy is a first-principles estimate; no one has published a production measurement, and it depends on how each model’s attention works.</li>
           <li>Some saving values (bucket bath, cold wash, computer shutdown) are engineering estimates.</li>
         </ul>
 
