@@ -1,50 +1,105 @@
 # dontfckmothernature
 
-Shows the water, energy and CO₂ behind your Claude Code and Codex usage, and lets you log everyday savings against it.
+See the water, energy and CO₂ behind your Claude Code and Codex usage, then pay it back.
 
-## What is in this repo
+A Claude Code plugin reads the token counts in your local session logs after every response and sends them to a small web app. The app turns them into an estimate of electricity, CO₂ and water, and gives you a checklist of everyday savings (shorter showers, an hour without AC, taking the metro) to log against it. Your dashboard shows one lifetime balance: what your AI used, what you saved, and what is left.
+
+Live site: [dontfckmothernature.vercel.app](https://dontfckmothernature.vercel.app)
+
+## Install
+
+**Claude Code**, inside a session:
+
+```
+/plugin marketplace add vedant-contentstack/dontfckmothernature
+/plugin install dontfckmothernature@dontfckmothernature
+/footprint
+```
+
+`/footprint` imports your past usage and prints your private dashboard link. After that, a `Stop` hook syncs in the background after every response.
+
+**Codex**, in a terminal:
+
+```bash
+npx dontfckmothernature codex
+```
+
+This backs up `~/.codex/config.toml`, sets `notify` to run the sync after every turn, and keeps any notify program you already had.
+
+## Privacy in short
+
+- Uploaded: token counts per model and per day, model names, timestamps, a SHA-1 hash of each log file path, and a random device ID.
+- Never uploaded: prompts, responses, code, file or folder names, names or emails.
+- There are no accounts. A random token in `~/.dontfck/config.json` is your login; the server stores only its SHA-256 hash.
+- You can delete everything from Settings on your dashboard.
+
+Full details: [privacy page](https://dontfckmothernature.vercel.app/privacy).
+
+## How the numbers are worked out
+
+No AI provider publishes energy per token, so every AI figure is an estimate with a likely range.
+
+```
+fresh tokens   Wh = (output + (input + cache write) × r_in) ÷ 1,000 × Wh per 1K output tokens (by model tier)
+cached tokens  J  = Σ cache read × new tokens × J per pair + Σ cache read × output tokens × J per pair
+CO₂            kg = kWh × grid intensity of the US data-centre regions
+water          L  = kWh × (data-centre cooling water ÷ PUE + water used to generate the electricity)
+```
+
+- Energy per token comes from ML.ENERGY measurements of large open models, DeepSeek's published production figures, and Microsoft research's per-query spread.
+- Cached-token cost is worked out per request from your logs (attention over cached context plus KV reads).
+- The range moves each factor to its own low or high and combines them as a root-sum-square on a log scale.
+- Savings use the lowest published value for each action and are capped at what an average person in your country uses in a day.
+
+Every factor, source and caveat is on the [method page](https://dontfckmothernature.vercel.app/method). The code is in `web/lib/footprint.ts`, `web/lib/actions.ts` and `web/lib/countries.ts`.
+
+## Repository layout
 
 | Path | What it is |
 |---|---|
-| `.claude-plugin/`, `hooks/`, `commands/` | The Claude Code plugin. The repo root is both the marketplace and the plugin. A `Stop` hook runs a sync after every response; `/footprint` prints the dashboard link. |
-| `cli/bin/dfmn.mjs` | The sync script, one file with no dependencies. Used by the plugin and published to npm for Codex (`npx dontfckmothernature codex`). |
-| `supabase/migrations/` | Database schema. |
-| `web/` | Next.js app: landing page, dashboard (`/me`), public share page (`/s/<slug>`) and the share card image. |
+| `.claude-plugin/`, `hooks/`, `commands/` | The Claude Code plugin. The repo root is both the marketplace and the plugin. |
+| `cli/bin/dfmn.mjs` | The sync script: one file, no dependencies. Used by the plugin and published to npm for Codex. |
+| `supabase/migrations/` | Postgres schema and the `ingest_usage` function. |
+| `web/` | Next.js app: landing page, dashboard (`/me`), share pages (`/s/<slug>`), share card images, method and privacy pages. |
 
-## How the data flows
+## How syncing works
 
-1. After each response, the hook starts `dfmn.mjs sync` in the background and returns straight away.
-2. The sync reads every `.jsonl` log changed since the last run (`~/.claude/projects`, `~/.codex/sessions`), adds up tokens per model, and sends the totals to `/api/ingest`. Totals are per log file, so sending a file twice changes nothing.
-3. The first run registers an anonymous profile and keeps the private token in `~/.dontfck/config.json`.
-4. The dashboard link is `/me#<token>`. The token sits after `#`, so it never reaches server logs.
+1. After each response the hook starts `dfmn.mjs sync` in the background and returns at once.
+2. The sync reads only log files that changed (`~/.claude/projects`, `~/.codex/sessions`) and adds up tokens per file, model and day.
+3. The server replaces the stored values for each file, model and day, so re-sending a file never counts it twice.
+4. Days older than 35 days are rolled into one lifetime total per model and frozen, so storage per user stays bounded.
 
-Uploaded: token counts, model name, timestamps, and a SHA-1 of each log file path. Never uploaded: prompts, code, folder names.
+CLI commands: `link`, `sync`, `status`, `rescan` (rebuild your usage from local logs), `codex`, `set-api <url>`. Background sync errors go to `~/.dontfck/sync.log`.
 
-## Setup
+## Self-hosting
 
-1. Create a Supabase project. In the SQL editor, run `supabase/migrations/20261001000000_init.sql` (or `supabase link` then `supabase db push`).
-2. Deploy `web/` to Vercel with root directory `web` and these env vars from `web/.env.example`:
-   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (Project settings → API)
-   - `NEXT_PUBLIC_GITHUB_REPO`, the GitHub repo that hosts this plugin
-3. Set `DEFAULT_API` at the top of `cli/bin/dfmn.mjs` to the deployed URL.
-4. Push this repo to GitHub, then in Claude Code:
-   ```
-   /plugin marketplace add <github-user>/dontfckmothernature
-   /plugin install dontfckmothernature@dontfckmothernature
-   /footprint
-   ```
-5. For Codex, publish the CLI (`cd cli && npm publish`) and run `npx dontfckmothernature codex`. Before publishing, run `node cli/bin/dfmn.mjs codex` from the repo to test it.
+1. Create a Supabase project and apply the migrations (`supabase link`, then `supabase db push`).
+2. Deploy `web/` to Vercel (root directory `web`) with the variables in `web/.env.example`:
+   `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `NEXT_PUBLIC_GITHUB_REPO`.
+3. Point the CLI at your deployment: `node cli/bin/dfmn.mjs set-api https://your-deployment.example`, or change `DEFAULT_API` in `cli/bin/dfmn.mjs` for your own fork.
 
-Useful commands: `node cli/bin/dfmn.mjs status`, `... sync`, `... set-api <url>`. Errors from background syncs go to `~/.dontfck/sync.log`.
+All database access goes through the Next.js API with the service role key. Row-level security is on with no policies, so the public API key can't read or write anything.
 
-## Numbers
+## Development
 
-- AI footprint: `web/lib/footprint.ts`. Tokens are weighted (output 1, input 0.2, cache write 0.25, cache read 0.02 at mid), multiplied by Wh per 1K output tokens for the model tier, then converted with 348 g CO₂/kWh and 4.61 L/kWh at mid. Low and high bands use the low and high value of every coefficient.
-- Savings: `web/lib/actions.ts` (17 daily habits, 8 one-time actions, conservative values) and `web/lib/savings.ts`.
-- Limits: custom entries count up to 50% of the country's average daily use, and all daily savings together up to 100% (`web/lib/countries.ts`). One-time actions are not limited.
+```bash
+cd web
+npm install
+cp .env.example .env   # fill in your Supabase project
+npm run dev
+```
+
+`npx tsc --noEmit` and `npm run lint` should both pass.
 
 ## Known gaps
 
-- Daily-use figures are sourced for India and the US only. Other countries use rough placeholders.
-- If Claude Code copies earlier messages into a new log file (for example, a forked session), those messages are counted again.
-- Model tiers are matched by name. Unknown Claude models count as Sonnet, and unknown OpenAI models as GPT-5.2.
+- `/api/register` and `/api/ingest` have no rate limiting yet.
+- Daily-use figures for Australia and UAE electricity, and UAE and world water, are proxies.
+- If Claude Code copies earlier messages into a new log file (for example a forked session), those messages are counted again.
+- Model tiers are matched by name; unknown Claude models count as Sonnet and unknown OpenAI models as GPT-5.2.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+Created by Vedant Karle ([vedantkarle.in](https://vedantkarle.in)).
