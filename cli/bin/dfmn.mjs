@@ -10,6 +10,7 @@
 //   codex         Sets up Codex to sync after every turn.
 //   set-api <url> Points the CLI at a different server.
 //   status        Shows what has been synced.
+//   rescan        Clears your usage on the server and uploads it again from the logs on this machine.
 //
 // Only token counts, model names, timestamps and a hash of each log file path are uploaded.
 // Prompt text, code and folder names never leave the machine.
@@ -163,9 +164,9 @@ function stamp(r, ts) {
 
 // ---------- server calls ----------
 
-async function post(route, body, token) {
+async function post(route, body, token, method = "POST") {
   const res = await fetch(`${apiUrl()}${route}`, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(body ?? {}),
     signal: AbortSignal.timeout(20_000),
@@ -328,6 +329,15 @@ async function codex() {
   await link();
 }
 
+async function rescan() {
+  const token = config().token;
+  if (!token) { console.error("Not set up yet. Run `link` first."); process.exitCode = 1; return; }
+  await post("/api/usage", undefined, token, "DELETE");
+  fs.rmSync(STATE, { force: true });
+  console.log("Cleared your usage on the server. Uploading it again from this machine's logs…");
+  await sync({ quiet: false });
+}
+
 function status() {
   const c = config();
   const s = readJson(STATE, { files: {} });
@@ -350,6 +360,7 @@ const commands = {
   link,
   codex,
   status,
+  rescan,
   "set-api": () => {
     if (!/^https?:\/\//.test(rest[0] ?? "")) { console.error("Usage: set-api https://your-deployment.example"); process.exitCode = 1; return; }
     writeJson(CONFIG, { ...config(), apiUrl: rest[0].replace(/\/$/, "") });
@@ -358,6 +369,6 @@ const commands = {
 };
 
 const run = commands[cmd] ?? (() => {
-  console.log("Usage: dontfckmothernature <codex | link | sync | status | set-api <url>>");
+  console.log("Usage: dontfckmothernature <codex | link | sync | status | rescan | set-api <url>>");
 });
 await run();
