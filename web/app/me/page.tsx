@@ -5,7 +5,7 @@ import { CopyCommand } from "@/components/CopyCommand";
 import { Header } from "@/components/Header";
 import { LinkInfo } from "@/components/LinkInfo";
 import { Panels } from "@/components/Panels";
-import { DAILY, ONETIME, actionById, type Saving } from "@/lib/actions";
+import { CATEGORIES, DAILY, ONETIME, actionById, type Saving } from "@/lib/actions";
 import { COUNTRIES } from "@/lib/countries";
 import { FACTORS, ago, balanceState, num, shortTokens, signed, type Factor } from "@/lib/format";
 import type { OffsetLog } from "@/lib/savings";
@@ -13,6 +13,17 @@ import { INSTALL } from "@/lib/site";
 import type { Summary } from "@/lib/summary";
 
 const TOKEN_KEY = "dfmn_token";
+
+type Tab = "overview" | "log" | "history" | "settings";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "log", label: "Log savings" },
+  { id: "history", label: "History" },
+  { id: "settings", label: "Settings" },
+];
+
+type Api = (path: string, init?: RequestInit) => Promise<unknown>;
+type Run = (fn: () => Promise<unknown>) => Promise<void>;
 
 function localDate(d = new Date()) {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -37,17 +48,23 @@ function gives(s: Saving) {
   return FACTORS.filter((f) => s[f.key]).map((f) => `${num(s[f.key]!)} ${f.key === "co2" ? "kg CO₂" : f.unit}`).join(" · ");
 }
 
+// Average share of the AI footprint paid back so far, across the three factors.
+function paidBack(data: Summary) {
+  const shares = FACTORS.map(({ key }) => (data.used.mid[key] > 0 ? Math.min(data.saved.total[key] / data.used.mid[key], 1) : 1));
+  return Math.round((shares.reduce((a, b) => a + b, 0) / shares.length) * 100);
+}
+
 export default function Dashboard() {
   const [token, setToken] = useState<string | null | undefined>(undefined);
   const [data, setData] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"footprint" | "sins">("footprint");
+  const [tab, setTab] = useState<Tab>("overview");
   const [busy, setBusy] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const today = localDate();
 
-  const api = useCallback(
-    async (path: string, init?: RequestInit) => {
+  const api = useCallback<Api>(
+    async (path, init) => {
       const res = await fetch(path, { ...init, headers: { "content-type": "application/json", authorization: `Bearer ${token}` } });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Something went wrong. Try again.");
@@ -58,15 +75,19 @@ export default function Dashboard() {
 
   const refresh = useCallback(async () => {
     try {
-      setData(await api(`/api/me?today=${today}`));
+      setData((await api(`/api/me?today=${today}`)) as Summary);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
     }
   }, [api, today]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => setToken(readToken()), []);
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (TABS.some((x) => x.id === t)) setTab(t as Tab);
+    setToken(readToken());
+  }, []);
   useEffect(() => {
     if (!token) return;
     let live = true;
@@ -86,7 +107,7 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, [token, api, today]);
 
-  const run = async (fn: () => Promise<unknown>) => {
+  const run: Run = async (fn) => {
     setBusy(true);
     try {
       await fn();
@@ -124,15 +145,17 @@ export default function Dashboard() {
       ) : (
         <>
           <Strip data={data} />
-          <div className="tabs" role="tablist">
-            <button type="button" role="tab" id="tab-footprint" className="btn" aria-selected={tab === "footprint"} onClick={() => setTab("footprint")}>My footprint</button>
-            <button type="button" role="tab" id="tab-sins" className="btn" aria-selected={tab === "sins"} onClick={() => setTab("sins")}>Clear your sins</button>
+          <div className="tabs" role="tablist" aria-label="Dashboard sections">
+            {TABS.map((t) => (
+              <button key={t.id} type="button" role="tab" id={`tab-${t.id}`} className="btn" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>
+                {t.label}
+              </button>
+            ))}
           </div>
-          {tab === "footprint" ? (
-            <Footprint data={data} busy={busy} onDelete={deleteAll} onShare={(share) => run(() => api("/api/profile", { method: "PATCH", body: JSON.stringify({ share }) }))} />
-          ) : (
-            <Sins data={data} busy={busy} today={today} api={api} run={run} />
-          )}
+          {tab === "overview" && <Overview data={data} onLog={() => setTab("log")} />}
+          {tab === "log" && <LogSavings data={data} busy={busy} today={today} api={api} run={run} />}
+          {tab === "history" && <HistoryTab data={data} busy={busy} onDelete={(id) => run(() => api(`/api/offsets/${id}`, { method: "DELETE" }))} />}
+          {tab === "settings" && <Settings data={data} busy={busy} api={api} run={run} onDelete={deleteAll} />}
         </>
       )}
     </main>
@@ -182,42 +205,241 @@ function Strip({ data }: { data: Summary }) {
   );
 }
 
-function Footprint({ data, busy, onShare, onDelete }: { data: Summary; busy: boolean; onShare: (on: boolean) => void; onDelete: () => void }) {
-  const [confirm, setConfirm] = useState("");
+/* ---------- Overview ---------- */
+
+function Overview({ data, onLog }: { data: Summary; onLog: () => void }) {
   const state = balanceState(data.used.mid, data.saved.total);
-  const shareUrl = data.shareSlug ? `${window.location.origin}/s/${data.shareSlug}` : null;
   const since = data.firstAt ? new Date(data.firstAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
+  const pct = paidBack(data);
+  const u = data.used.mid;
+
+  return (
+    <>
+      <section className="section">
+        <h2>{since ? `Since ${since}` : "Your lifetime balance"}</h2>
+        <p className="lede">
+          Your AI use has needed about <strong>{num(u.water)} L</strong> of water, <strong>{num(u.energy)} kWh</strong> of electricity and{" "}
+          <strong>{num(u.co2)} kg</strong> of CO₂. You have paid back <strong>{pct}%</strong> of it.
+        </p>
+        <Panels used={data.used.mid} saved={data.saved.total} balance={data.balance.mid} state={state} />
+        <details className="more">
+          <summary>How sure are these numbers?</summary>
+          <div className="more-body">
+            <p>
+              No AI company publishes energy per token, so the AI figures are middle estimates. The real values could be anywhere from{" "}
+              {FACTORS.map((f) => `${num(data.used.low[f.key])} to ${num(data.used.high[f.key])} ${f.unit}`).join(", ")}.
+            </p>
+            <p><a href="/method">How the numbers are worked out</a></p>
+          </div>
+        </details>
+      </section>
+      {state !== "credit" && (
+        <div className="box callout">
+          <p>Paying it back starts with everyday things, like a shorter shower or an hour without AC.</p>
+          <button type="button" className="btn go" onClick={onLog}>Log a saving</button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ---------- Log savings ---------- */
+
+function LogSavings({ data, busy, today, api, run }: { data: Summary; busy: boolean; today: string; api: Api; run: Run }) {
+  const todayCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of data.logs) if (l.kind === "daily" && l.logged_on === today) m.set(l.action_id!, (m.get(l.action_id!) ?? 0) + l.quantity);
+    return m;
+  }, [data.logs, today]);
+
+  const [onetime, setOnetime] = useState({ action_id: ONETIME[0].id, quantity: "1", logged_on: today });
+  const [custom, setCustom] = useState<{ factor: Factor; amount: string; note: string }>({ factor: "water", amount: "", note: "" });
+  const post = (body: object) => run(() => api("/api/offsets", { method: "POST", body: JSON.stringify(body) }));
+  const t = data.saved.today;
+  const chosen = ONETIME.find((a) => a.id === onetime.action_id)!;
 
   return (
     <>
       <section className="section">
         <div className="section-head">
-          <h2>Lifetime{since ? ` since ${since}` : ""}</h2>
-          <span className="muted small">AI figures are mid estimates</span>
+          <h2>Today</h2>
+          <span className="muted small">Daily cap: what an average person in your country uses in a day</span>
         </div>
-        <Panels used={data.used.mid} saved={data.saved.total} balance={data.balance.mid} state={state} />
-        <p className="muted small">
-          Range for AI usage: {FACTORS.map((f) => `${num(data.used.low[f.key])}–${num(data.used.high[f.key])} ${f.unit}`).join(" · ")}.
-          No AI company publishes per-token figures, so the real number could be anywhere in this range.
-        </p>
+        <div className="meter">
+          {FACTORS.map((f) => {
+            const pct = t.limit[f.key] > 0 ? Math.min(100, (t.counted[f.key] / t.limit[f.key]) * 100) : 0;
+            return (
+              <div className="box" key={f.key}>
+                <div className="meter-head">
+                  <span className="label">{f.label}</span>
+                  <span className="small">{num(t.counted[f.key])} / {num(t.limit[f.key])} {f.unit}</span>
+                </div>
+                <div className="bar"><span style={{ width: `${pct}%` }} /></div>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       <section className="section">
-        <h2>By model</h2>
+        <h2>Daily habits</h2>
+        {CATEGORIES.map((c, i) => {
+          const actions = DAILY.filter((a) => a.category === c.id);
+          const done = actions.reduce((s, a) => s + (todayCounts.get(a.id) ?? 0), 0);
+          return (
+            <details className="group box" key={c.id} open={i === 0}>
+              <summary>
+                <span className="group-title">{c.label}</span>
+                <span className="muted small">{c.hint}</span>
+                {done > 0 && <span className="pill">{done} today</span>}
+              </summary>
+              <ul className="rows">
+                {actions.map((a) => {
+                  const n = todayCounts.get(a.id) ?? 0;
+                  const full = n >= a.cap;
+                  return (
+                    <li key={a.id} className={full ? "full" : ""}>
+                      <div className="row-text">
+                        <span className="name">{a.name}</span>
+                        <span className="gives">{gives(a.per)}</span>
+                      </div>
+                      <span className="count small">{n}/{a.cap}</span>
+                      <button type="button" id={`log-${a.id}`} className="btn go" disabled={busy || full} onClick={() => post({ kind: "daily", action_id: a.id, quantity: 1, logged_on: today })}>
+                        {full ? "Done" : "+1"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </details>
+          );
+        })}
+      </section>
+
+      <section className="section">
+        <h2>Bigger changes</h2>
+        <details className="group box">
+          <summary>
+            <span className="group-title">One-time action</span>
+            <span className="muted small">Keeps saving every month, like LED bulbs or solar</span>
+          </summary>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              post({ kind: "onetime", action_id: onetime.action_id, quantity: Number(onetime.quantity), logged_on: onetime.logged_on });
+            }}
+          >
+            <label className="field wide">
+              <span className="label">Action</span>
+              <select id="onetime-action" value={onetime.action_id} onChange={(e) => setOnetime({ ...onetime, action_id: e.target.value })}>
+                {ONETIME.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span className="label">How many {chosen.unit}</span>
+              <input id="onetime-qty" type="number" min="0.1" step="0.1" required value={onetime.quantity} onChange={(e) => setOnetime({ ...onetime, quantity: e.target.value })} />
+            </label>
+            <label className="field">
+              <span className="label">Done on</span>
+              <input id="onetime-date" type="date" max={today} required value={onetime.logged_on} onChange={(e) => setOnetime({ ...onetime, logged_on: e.target.value })} />
+            </label>
+            <button type="submit" className="btn go" disabled={busy}>Add</button>
+            <p className="muted small full-width">
+              Saves {gives(chosen.perMonth)} a month per {chosen.unit.replace(/s$/, "")}, for {chosen.months / 12} years.
+            </p>
+          </form>
+        </details>
+
+        <details className="group box">
+          <summary>
+            <span className="group-title">Something else</span>
+            <span className="muted small">Counts up to half of today’s cap</span>
+          </summary>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              post({ kind: "custom", factor: custom.factor, amount: Number(custom.amount), note: custom.note, logged_on: today });
+              setCustom({ ...custom, amount: "", note: "" });
+            }}
+          >
+            <label className="field">
+              <span className="label">Saved</span>
+              <select id="custom-factor" value={custom.factor} onChange={(e) => setCustom({ ...custom, factor: e.target.value as Factor })}>
+                {FACTORS.map((f) => <option key={f.key} value={f.key}>{f.label} ({f.unit})</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span className="label">Amount</span>
+              <input id="custom-amount" type="number" min="0.01" step="0.01" required value={custom.amount} onChange={(e) => setCustom({ ...custom, amount: e.target.value })} />
+            </label>
+            <label className="field wide">
+              <span className="label">What you did</span>
+              <input id="custom-note" maxLength={140} required placeholder="Watered plants with leftover cooking water" value={custom.note} onChange={(e) => setCustom({ ...custom, note: e.target.value })} />
+            </label>
+            <button type="submit" className="btn go" disabled={busy}>Add</button>
+          </form>
+        </details>
+      </section>
+    </>
+  );
+}
+
+/* ---------- History ---------- */
+
+function HistoryTab({ data, busy, onDelete }: { data: Summary; busy: boolean; onDelete: (id: number) => void }) {
+  const describe = (l: OffsetLog) => {
+    if (l.kind === "custom") return { name: l.note ?? "Custom saving", amount: `${num(l.amount!)} ${FACTORS.find((f) => f.key === l.factor)!.unit}` };
+    const a = actionById(l.action_id!);
+    if (!a) return { name: l.action_id!, amount: "" };
+    if (a.kind === "daily") return { name: a.name, amount: `× ${l.quantity}` };
+    return { name: a.name, amount: `${l.quantity} ${a.unit}` };
+  };
+
+  return (
+    <>
+      <section className="section">
+        <h2>Your savings</h2>
+        {data.logs.length === 0 ? (
+          <p className="muted">Nothing logged yet. Savings you add in “Log savings” show up here.</p>
+        ) : (
+          <div className="box table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>What</th><th className="r">Amount</th><th /></tr></thead>
+              <tbody>
+                {data.logs.slice(0, 100).map((l) => {
+                  const d = describe(l);
+                  return (
+                    <tr key={l.id}>
+                      <td>{l.logged_on}</td>
+                      <td>{d.name}</td>
+                      <td className="r">{d.amount}</td>
+                      <td className="r"><button type="button" className="btn small-btn" disabled={busy} onClick={() => onDelete(l.id)}>Remove</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="section">
+        <h2>AI usage by model</h2>
         {data.byModel.length === 0 ? (
-          <p className="muted">No usage synced yet. It appears here after your next prompt in Claude Code or Codex.</p>
+          <p className="muted">No usage synced yet. It appears after your next prompt in Claude Code or Codex.</p>
         ) : (
           <div className="box table-wrap">
             <table>
               <thead>
-                <tr><th>Model</th><th>Tool</th><th>Counted as</th><th className="r">Tokens</th><th className="r">Energy (mid)</th></tr>
+                <tr><th>Model</th><th>Tool</th><th className="r">Tokens</th><th className="r">Energy</th></tr>
               </thead>
               <tbody>
                 {data.byModel.map((m) => (
                   <tr key={`${m.source}:${m.model}`}>
-                    <td>{m.model}</td>
+                    <td>{m.model}<div className="muted small">Counted as {m.tier}</div></td>
                     <td>{m.source === "claude" ? "Claude Code" : "Codex"}</td>
-                    <td>{m.tier}</td>
                     <td className="r">{shortTokens(m.tokens)}</td>
                     <td className="r">{num(m.energy)} kWh</td>
                   </tr>
@@ -227,11 +449,33 @@ function Footprint({ data, busy, onShare, onDelete }: { data: Summary; busy: boo
           </div>
         )}
       </section>
+    </>
+  );
+}
+
+/* ---------- Settings ---------- */
+
+function Settings({ data, busy, api, run, onDelete }: { data: Summary; busy: boolean; api: Api; run: Run; onDelete: () => void }) {
+  const [confirm, setConfirm] = useState("");
+  const shareUrl = data.shareSlug ? `${window.location.origin}/s/${data.shareSlug}` : null;
+  const patch = (body: object) => run(() => api("/api/profile", { method: "PATCH", body: JSON.stringify(body) }));
+
+  return (
+    <>
+      <section className="section">
+        <h2>Country</h2>
+        <div className="box setting">
+          <p className="muted small">Sets how much CO₂ each kWh you save is worth, and your daily saving cap.</p>
+          <select id="country" aria-label="Country" value={data.country} disabled={busy} onChange={(e) => patch({ country: e.target.value })}>
+            {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+          </select>
+        </div>
+      </section>
 
       <section className="section">
         <div className="section-head">
           <h2>Share card</h2>
-          <button type="button" id="share-toggle" className="btn" disabled={busy} onClick={() => onShare(!shareUrl)}>
+          <button type="button" id="share-toggle" className="btn" disabled={busy} onClick={() => patch({ share: !shareUrl })}>
             {shareUrl ? "Turn off sharing" : "Create share link"}
           </button>
         </div>
@@ -240,17 +484,14 @@ function Footprint({ data, busy, onShare, onDelete }: { data: Summary; busy: boo
             <CopyCommand text={shareUrl} label="Copy link" />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="card-img" src={`/s/${data.shareSlug}/opengraph-image?v=${Math.round(data.balance.mid.water * 10)}`} alt="Your share card" width={1200} height={630} />
-            <p className="muted small">The public page shows only the three totals. Turning sharing off breaks the link for good; a new one gets a new address.</p>
           </>
         ) : (
-          <p className="muted">Sharing is off. Creating a link makes a public page with your used, saved and balance totals and nothing else.</p>
+          <p className="muted">Sharing is off. A share link shows only your three totals, never your history or settings.</p>
         )}
-      </section>
-
-      <section className="section">
-        <h2>Private link and share link</h2>
-        <p className="muted small">The address of this page is your private link. Share the share link instead.</p>
-        <LinkInfo />
+        <details className="more">
+          <summary>Share link or private link: what’s the difference?</summary>
+          <div className="more-body"><LinkInfo /></div>
+        </details>
       </section>
 
       <section className="section">
@@ -263,7 +504,7 @@ function Footprint({ data, busy, onShare, onDelete }: { data: Summary; busy: boo
           }}
         >
           <p className="field wide" style={{ margin: 0 }}>
-            Removes your profile, all usage history, logged savings and share link from the server. This can’t be undone. Type DELETE to confirm.
+            Removes your profile, usage history, savings and share link from the server. This can’t be undone. Type DELETE to confirm.
           </p>
           <label className="field">
             <span className="label">Confirm</span>
@@ -275,173 +516,3 @@ function Footprint({ data, busy, onShare, onDelete }: { data: Summary; busy: boo
     </>
   );
 }
-
-type Api = (path: string, init?: RequestInit) => Promise<unknown>;
-
-function Sins({ data, busy, today, api, run }: { data: Summary; busy: boolean; today: string; api: Api; run: (fn: () => Promise<unknown>) => Promise<void> }) {
-  const todayCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const l of data.logs) if (l.kind === "daily" && l.logged_on === today) m.set(l.action_id!, (m.get(l.action_id!) ?? 0) + l.quantity);
-    return m;
-  }, [data.logs, today]);
-
-  const [onetime, setOnetime] = useState({ action_id: ONETIME[0].id, quantity: "1", logged_on: today });
-  const [custom, setCustom] = useState<{ factor: Factor; amount: string; note: string }>({ factor: "water", amount: "", note: "" });
-  const post = (body: object) => run(() => api("/api/offsets", { method: "POST", body: JSON.stringify(body) }));
-  const t = data.saved.today;
-
-  return (
-    <>
-      <section className="section">
-        <div className="section-head">
-          <h2>Where you live</h2>
-          <select
-            id="country"
-            aria-label="Country"
-            value={data.country}
-            disabled={busy}
-            onChange={(e) => run(() => api("/api/profile", { method: "PATCH", body: JSON.stringify({ country: e.target.value }) }))}
-          >
-            {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
-          </select>
-        </div>
-        <p className="muted small">Your country sets how much CO₂ each saved kWh is worth and the daily limits below.</p>
-      </section>
-
-      <section className="section">
-        <h2>Today&rsquo;s limit</h2>
-        <div className="meter">
-          {FACTORS.map((f) => {
-            const pct = t.limit[f.key] > 0 ? Math.min(100, (t.counted[f.key] / t.limit[f.key]) * 100) : 0;
-            return (
-              <div className="box" key={f.key}>
-                <span className="label">{f.label}</span>
-                <span className="num" style={{ fontSize: 20 }}>{num(t.counted[f.key])}<small>of {num(t.limit[f.key])} {f.unit}</small></span>
-                <div className="bar"><span style={{ width: `${pct}%` }} /></div>
-              </div>
-            );
-          })}
-        </div>
-        <p className="muted small">You can&rsquo;t save more in a day than an average person in your country uses. Custom entries count up to half of that. One-time actions are not limited.</p>
-      </section>
-
-      <section className="section">
-        <h2>Daily habits</h2>
-        <div className="actions">
-          {DAILY.map((a) => {
-            const done = todayCounts.get(a.id) ?? 0;
-            const full = done >= a.cap;
-            return (
-              <div className={`action box${full ? " full" : ""}`} key={a.id}>
-                <span className="name">{a.name}</span>
-                <span className="muted small">{a.note}</span>
-                <div className="foot">
-                  <span className="gives">{gives(a.per)}</span>
-                  <button type="button" id={`log-${a.id}`} className="btn go" disabled={busy || full} onClick={() => post({ kind: "daily", action_id: a.id, quantity: 1, logged_on: today })}>
-                    {full ? `${done}/${a.cap} done` : `+1 · ${done}/${a.cap}`}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="section">
-        <h2>One-time actions</h2>
-        <p className="muted small">These keep saving every month after you do them, for as long as the action lasts.</p>
-        <form
-          className="form box"
-          onSubmit={(e) => {
-            e.preventDefault();
-            post({ kind: "onetime", action_id: onetime.action_id, quantity: Number(onetime.quantity), logged_on: onetime.logged_on });
-          }}
-        >
-          <label className="field wide">
-            <span className="label">Action</span>
-            <select id="onetime-action" value={onetime.action_id} onChange={(e) => setOnetime({ ...onetime, action_id: e.target.value })}>
-              {ONETIME.map((a) => <option key={a.id} value={a.id}>{a.name} · {gives(a.perMonth)} a month for {a.months / 12} yr</option>)}
-            </select>
-          </label>
-          <label className="field">
-            <span className="label">How many ({ONETIME.find((a) => a.id === onetime.action_id)?.unit})</span>
-            <input id="onetime-qty" type="number" min="0.1" step="0.1" required value={onetime.quantity} onChange={(e) => setOnetime({ ...onetime, quantity: e.target.value })} />
-          </label>
-          <label className="field">
-            <span className="label">Done on</span>
-            <input id="onetime-date" type="date" max={today} required value={onetime.logged_on} onChange={(e) => setOnetime({ ...onetime, logged_on: e.target.value })} />
-          </label>
-          <button type="submit" className="btn go" disabled={busy}>Add</button>
-        </form>
-      </section>
-
-      <section className="section">
-        <h2>Something else</h2>
-        <form
-          className="form box"
-          onSubmit={(e) => {
-            e.preventDefault();
-            post({ kind: "custom", factor: custom.factor, amount: Number(custom.amount), note: custom.note, logged_on: today });
-            setCustom({ ...custom, amount: "", note: "" });
-          }}
-        >
-          <label className="field">
-            <span className="label">Saved</span>
-            <select id="custom-factor" value={custom.factor} onChange={(e) => setCustom({ ...custom, factor: e.target.value as Factor })}>
-              {FACTORS.map((f) => <option key={f.key} value={f.key}>{f.label} ({f.unit})</option>)}
-            </select>
-          </label>
-          <label className="field">
-            <span className="label">Amount</span>
-            <input id="custom-amount" type="number" min="0.01" step="0.01" required value={custom.amount} onChange={(e) => setCustom({ ...custom, amount: e.target.value })} />
-          </label>
-          <label className="field wide">
-            <span className="label">What you did</span>
-            <input id="custom-note" maxLength={140} required placeholder="Watered plants with leftover cooking water" value={custom.note} onChange={(e) => setCustom({ ...custom, note: e.target.value })} />
-          </label>
-          <button type="submit" className="btn go" disabled={busy}>Add</button>
-        </form>
-        <p className="muted small">Counted today: {FACTORS.map((f) => `${num(t.customCounted[f.key])} of ${num(t.customLimit[f.key])} ${f.unit}`).join(" · ")}.</p>
-      </section>
-
-      <History logs={data.logs} busy={busy} onDelete={(id) => run(() => api(`/api/offsets/${id}`, { method: "DELETE" }))} />
-    </>
-  );
-}
-
-function History({ logs, busy, onDelete }: { logs: OffsetLog[]; busy: boolean; onDelete: (id: number) => void }) {
-  if (logs.length === 0) return null;
-  const describe = (l: OffsetLog) => {
-    if (l.kind === "custom") return { name: l.note ?? "Custom saving", amount: `${num(l.amount!)} ${FACTORS.find((f) => f.key === l.factor)!.unit}` };
-    const a = actionById(l.action_id!);
-    if (!a) return { name: l.action_id!, amount: "" };
-    if (a.kind === "daily") return { name: a.name, amount: `× ${l.quantity}` };
-    return { name: a.name, amount: `${l.quantity} ${a.unit}` };
-  };
-  return (
-    <section className="section">
-      <h2>History</h2>
-      <div className="box table-wrap">
-        <table>
-          <thead><tr><th>Date</th><th>What</th><th className="r">Amount</th><th /></tr></thead>
-          <tbody>
-            {logs.slice(0, 100).map((l) => {
-              const d = describe(l);
-              return (
-                <tr key={l.id}>
-                  <td>{l.logged_on}</td>
-                  <td>{d.name}</td>
-                  <td className="r">{d.amount}</td>
-                  <td className="r">
-                    <button type="button" className="btn" style={{ padding: "6px 10px" }} disabled={busy} onClick={() => onDelete(l.id)}>Remove</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-

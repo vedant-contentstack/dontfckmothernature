@@ -24,9 +24,10 @@ export type BalanceState = "debt" | "even" | "credit";
 
 // Average share of the footprint paid back across the three factors.
 export function balanceState(used: Impact, saved: Impact): BalanceState {
-  const ratios = FACTORS.map(({ key }) => (used[key] > 0 ? Math.min(saved[key] / used[key], 2) : 1));
+  // Each factor counts at most 100%, so a big water saving cannot hide an energy debt.
+  const ratios = FACTORS.map(({ key }) => (used[key] > 0 ? Math.min(saved[key] / used[key], 1) : 1));
   const avg = ratios.reduce((a, b) => a + b, 0) / ratios.length;
-  if (avg >= 1) return "credit";
+  if (avg >= 0.999) return "credit";
   if (avg >= 0.9) return "even";
   return "debt";
 }

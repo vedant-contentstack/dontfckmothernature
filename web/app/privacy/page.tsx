@@ -28,7 +28,21 @@ export default function Privacy() {
           replied, or your code. There are no accounts, names or email addresses.
         </p>
 
+        <div className="box summary-box">
+          <span className="label">In short</span>
+          <ul>
+            <li>Only token counts, model names, dates and random IDs are uploaded. Never prompts, code or file names.</li>
+            <li>There is no account. A private token on your machine is your login, and the server keeps only its hash.</li>
+            <li>Nobody else can see your data. A share link shows just three totals.</li>
+            <li>You can delete everything yourself from Settings on your dashboard.</li>
+          </ul>
+        </div>
+
         <h2>What is collected</h2>
+        <p>Usage numbers per model and per day, a random ID for each log file and device, your country, and the savings you log.</p>
+        <details className="more">
+          <summary>Show every field and why it’s needed</summary>
+          <div className="more-body">
         <div className="box table-wrap">
           <table className="wrap-cells">
             <thead><tr><th>Data</th><th>What exactly</th><th>Why</th></tr></thead>
@@ -37,6 +51,8 @@ export default function Privacy() {
             </tbody>
           </table>
         </div>
+          </div>
+        </details>
 
         <h2>What is never collected</h2>
         <ul>
@@ -84,7 +100,11 @@ export default function Privacy() {
         </ul>
 
         <h2>Private link and share link</h2>
-        <LinkInfo />
+        <p>Your private link controls your dashboard. A share link is read-only and shows three totals.</p>
+        <details className="more">
+          <summary>Compare the two links</summary>
+          <div className="more-body"><LinkInfo /></div>
+        </details>
 
         <h2>Sharing</h2>
         <p>
@@ -95,7 +115,7 @@ export default function Privacy() {
 
         <h2>Deleting your data</h2>
         <p>
-          On your dashboard, open “My footprint”, scroll to “Delete my data”, type DELETE and confirm. Your profile, usage history, logged
+          On your dashboard, open Settings, go to “Delete my data”, type DELETE and confirm. Your profile, usage history, logged
           savings and share link are removed from the database at once. Only your own private link can do this; a share link cannot.
         </p>
         <p>

@@ -131,6 +131,42 @@ td.r, th.r { text-align: right; }
 .error { border: var(--line) solid var(--ink); background: var(--debt); color: #111; padding: 12px 16px; font-weight: 600; }
 .card-img { width: 100%; height: auto; aspect-ratio: 1200 / 630; border: var(--line) solid var(--ink); box-shadow: var(--shadow); display: block; background: #fffdf5; }
 
+/* Collapsible groups and "more" disclosures */
+details > summary { list-style: none; cursor: pointer; }
+details > summary::-webkit-details-marker { display: none; }
+.group { padding: 0; }
+.group > summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; padding: 14px 18px; }
+.group > summary::before { content: "+"; font-family: var(--mono); font-weight: 800; width: 14px; }
+.group[open] > summary::before { content: "−"; }
+.group[open] > summary { border-bottom: 2px solid var(--ink); }
+.group-title { font-weight: 700; font-size: 17px; }
+.group .form { padding: 16px 18px; }
+.pill { margin-left: auto; font-family: var(--mono); font-weight: 800; font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  background: var(--leaf); color: #111; border: 2px solid #111; padding: 3px 8px; }
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows li { display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: 1px solid color-mix(in srgb, var(--ink) 25%, transparent); }
+.rows li:last-child { border-bottom: 0; }
+.rows li.full { opacity: .5; }
+.row-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.row-text .name { font-weight: 600; }
+.row-text .gives { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--muted); }
+.rows .count { font-family: var(--mono); color: var(--muted); }
+.rows .btn { min-width: 64px; }
+.more > summary { font-family: var(--mono); font-weight: 800; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.more > summary::before { content: "+ "; }
+.more[open] > summary::before { content: "− "; }
+.more-body { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
+.more-body p { margin: 0; }
+.callout { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 18px; }
+.callout p { margin: 0; }
+.setting { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 18px; }
+.setting p { margin: 0; }
+.meter-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.small-btn { padding: 6px 10px; }
+.full-width { flex-basis: 100%; margin: 0; }
+.summary-box { padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+.summary-box ul { margin: 0; }
+
 /* Long-form pages */
 .prose { display: flex; flex-direction: column; gap: 16px; max-width: 820px; }
 /* Flex children default to min-width:auto, which lets a wide table push the page past the screen. */
