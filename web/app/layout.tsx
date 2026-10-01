@@ -13,7 +13,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geist.variable} ${mono.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <footer className="site-foot">
+          Created by: Vedant Karle (<a href="https://vedantkarle.in" target="_blank" rel="noopener noreferrer">vedantkarle.in</a>)
+        </footer>
+      </body>
     </html>
   );
 }

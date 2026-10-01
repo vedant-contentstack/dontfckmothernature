@@ -40,7 +40,7 @@ body {
 a { color: inherit; }
 button, input, select { font: inherit; color: inherit; }
 
-.wrap { max-width: 1040px; margin: 0 auto; padding-block: 28px 80px; display: flex; flex-direction: column; gap: 36px; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 28px 56px; display: flex; flex-direction: column; gap: 36px; }
 
 /* Header */
 .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
@@ -129,6 +129,10 @@ td.r, th.r { text-align: right; }
 
 .error { border: var(--line) solid var(--ink); background: var(--debt); color: #111; padding: 12px 16px; font-weight: 600; }
 .card-img { width: 100%; height: auto; aspect-ratio: 1200 / 630; border: var(--line) solid var(--ink); box-shadow: var(--shadow); display: block; background: #fffdf5; }
+
+.site-foot { max-width: 1040px; margin: 0 auto; padding-block: 18px 32px; border-top: var(--line) solid var(--ink);
+  font-family: var(--mono); font-weight: 700; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.site-foot a { text-underline-offset: 3px; }
 
 @media (prefers-reduced-motion: reduce) {
   .caret { animation: none; }
