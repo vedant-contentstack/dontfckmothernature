@@ -226,7 +226,7 @@ function Overview({ data, onLog }: { data: Summary; onLog: () => void }) {
           <summary>How sure are these numbers?</summary>
           <div className="more-body">
             <p>
-              No AI company publishes energy per token, so the AI figures are middle estimates. The real values could be anywhere from{" "}
+              No AI company publishes energy per token, so the AI figures are middle estimates from published measurements. The likely range is{" "}
               {FACTORS.map((f) => `${num(data.used.low[f.key])} to ${num(data.used.high[f.key])} ${f.unit}`).join(", ")}.
             </p>
             <p><a href="/method">How the numbers are worked out</a></p>

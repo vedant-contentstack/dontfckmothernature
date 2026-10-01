@@ -4,7 +4,7 @@ import { Header } from "@/components/Header";
 import { DAILY, ONETIME, type Saving } from "@/lib/actions";
 import { COUNTRIES } from "@/lib/countries";
 import {
-  BANDS, CACHE_WRITE, CARBON_G_PER_KWH, R_CACHE_READ, R_IN_ANTHROPIC, R_IN_OPENAI, TIERS, WATER_L_PER_KWH, energyWh, usageImpact,
+  BANDS, CACHE_WRITE, CARBON_G_PER_KWH, R_CACHE_READ, R_IN, TIERS, WATER_L_PER_KWH, usageImpact,
 } from "@/lib/footprint";
 import { num } from "@/lib/format";
 import { CUSTOM_SHARE } from "@/lib/savings";
@@ -54,8 +54,8 @@ export default function Method() {
 
         <h2>2. Tokens to energy</h2>
         <p>
-          Output tokens cost the most energy. Input and cached tokens count for less, in line with their API prices. The weighted total is
-          multiplied by an energy figure for the model’s size.
+          Output tokens cost the most energy. Input tokens count for about 40% of an output token, and cached tokens for much less,
+          based on measured serving throughput. The weighted total is multiplied by an energy figure for the model’s size.
         </p>
         <details className="more">
           <summary>Show the formula and factors</summary>
@@ -72,9 +72,8 @@ energy (Wh)     = weighted tokens ÷ 1,000 × Wh per 1K output tokens`}
               <table>
                 <thead><tr><th>Weight</th>{BANDS.map((b) => <th key={b} className="r">{b}</th>)}</tr></thead>
                 <tbody>
-                  <tr><td>r_in, Claude models</td>{BANDS.map((b) => <td key={b} className="r">{R_IN_ANTHROPIC[b]}</td>)}</tr>
-                  <tr><td>r_in, OpenAI models</td>{BANDS.map((b) => <td key={b} className="r">{R_IN_OPENAI[b]}</td>)}</tr>
-                  <tr><td>r_cache</td>{BANDS.map((b) => <td key={b} className="r">{R_CACHE_READ[b]}</td>)}</tr>
+                  <tr><td>r_in (input token vs output token)</td>{BANDS.map((b) => <td key={b} className="r">{R_IN[b]}</td>)}</tr>
+                  <tr><td>r_cache (cache read vs input token)</td>{BANDS.map((b) => <td key={b} className="r">{R_CACHE_READ[b]}</td>)}</tr>
                 </tbody>
               </table>
             </div>
@@ -89,17 +88,19 @@ energy (Wh)     = weighted tokens ÷ 1,000 × Wh per 1K output tokens`}
               </table>
             </div>
             <p className="muted small">
-              Model sizes are EcoLogits’ estimates, with Epoch AI’s energy method, including data-centre overhead. Check: a 500-token Sonnet
-              reply is about 0.26 Wh at mid, close to published per-query figures from Google (0.24 Wh), Microsoft research (0.31 Wh) and
-              OpenAI (0.34 Wh).
+              Energy per token comes from ML.ENERGY measurements of large open models (DeepSeek-V3.1, Llama 405B, Qwen3-235B) at realistic
+              batch sizes, DeepSeek’s published production numbers, and Microsoft research’s per-query spread, which sets the high. The input
+              weight comes from prefill versus decode throughput in DeepSeek and SGLang serving. The cache weight is a first-principles
+              estimate of attention over cached context. Check: a 500-token Sonnet reply is about 0.23 Wh at mid, close to Google’s published
+              0.24 Wh median prompt.
             </p>
           </div>
         </details>
 
         <h2>3. Energy to CO₂ and water</h2>
         <p>
-          CO₂ uses the carbon intensity of the US grid, where the data centres are. Water counts both data-centre cooling and the water
-          power plants use to make the electricity; the second part is about 95% of it.
+          CO₂ uses the grids of the US regions where Anthropic and OpenAI run inference, from Virginia to Ohio and Iowa. Water counts both
+          data-centre cooling and the water power plants use to make the electricity; the second part is most of it.
         </p>
         <details className="more">
           <summary>Show the formula and factors</summary>
@@ -112,13 +113,20 @@ water (L) = kWh × (cooling water per kWh ÷ PUE + water used to generate each k
               <table>
                 <thead><tr><th>Factor</th>{BANDS.map((b) => <th key={b} className="r">{b}</th>)}<th>Source</th></tr></thead>
                 <tbody>
-                  <tr><td>Grid carbon (g CO₂/kWh)</td>{BANDS.map((b) => <td key={b} className="r">{CARBON_G_PER_KWH[b]}</td>)}<td>EPA eGRID, Ember 2025</td></tr>
-                  <tr><td>Water (L/kWh)</td>{BANDS.map((b) => <td key={b} className="r">{fmt(WATER_L_PER_KWH[b])}</td>)}<td>Cloud WUE and PUE; Li et al.; Jegham et al.</td></tr>
+                  <tr><td>Grid carbon (g CO₂/kWh)</td>{BANDS.map((b) => <td key={b} className="r">{CARBON_G_PER_KWH[b]}</td>)}<td>EPA eGRID2023: Virginia, blend, Ohio/Indiana/Iowa</td></tr>
+                  <tr><td>Water (L/kWh)</td>{BANDS.map((b) => <td key={b} className="r">{fmt(WATER_L_PER_KWH[b])}</td>)}<td>AWS Virginia, fleet blend, Google Iowa; Li et al. off-site water</td></tr>
                 </tbody>
               </table>
             </div>
           </div>
         </details>
+
+        <h2>How the range is worked out</h2>
+        <p>
+          The low and high are not “every factor at its worst at once”, which almost never happens. Each factor is moved to its own low or
+          high, and the effects are combined the standard way for independent uncertainties (root-sum-square on a log scale). The result
+          is a range of roughly a third to three times the middle value.
+        </p>
 
         <h2>Example</h2>
         <p>A Claude Sonnet session with 2,000,000 cache-read, 200,000 input and 50,000 output tokens:</p>
@@ -126,7 +134,7 @@ water (L) = kWh × (cooling water per kWh ÷ PUE + water used to generate each k
           <table>
             <thead><tr><th /> {BANDS.map((b) => <th key={b} className="r">{b}</th>)}</tr></thead>
             <tbody>
-              <tr><td>Energy</td>{BANDS.map((b) => <td key={b} className="r">{fmt(energyWh(EXAMPLE.model, EXAMPLE, b), 1)} Wh</td>)}</tr>
+              <tr><td>Energy</td>{BANDS.map((b) => <td key={b} className="r">{fmt(ex[b].energy * 1000, 1)} Wh</td>)}</tr>
               <tr><td>CO₂</td>{BANDS.map((b) => <td key={b} className="r">{fmt(ex[b].co2 * 1000, 1)} g</td>)}</tr>
               <tr><td>Water</td>{BANDS.map((b) => <td key={b} className="r">{fmt(ex[b].water)} L</td>)}</tr>
             </tbody>
@@ -179,8 +187,8 @@ water (L) = kWh × (cooling water per kWh ÷ PUE + water used to generate each k
 
         <h2>5. What is uncertain</h2>
         <ul>
-          <li>Model sizes aren’t published, so the high estimate is about 30 times the low one.</li>
-          <li>Weighting input and cached tokens by price is a reasonable proxy, not a measurement.</li>
+          <li>Model sizes and hardware aren’t published, so even with measured data the high is several times the low.</li>
+          <li>The cached-token weight is a first-principles estimate; no one has published a production measurement.</li>
           <li>Some saving values (bucket bath, cold wash, computer shutdown) are engineering estimates.</li>
         </ul>
 
@@ -188,6 +196,10 @@ water (L) = kWh × (cooling water per kWh ÷ PUE + water used to generate each k
           <summary>Sources</summary>
           <div className="more-body">
             <ul className="small">
+              <li><a href="https://ml.energy/blog/measurement/energy/diagnosing-inference-energy-consumption-with-the-mlenergy-leaderboard-v30/">ML.ENERGY Leaderboard v3</a> (2026)</li>
+              <li><a href="https://arxiv.org/abs/2509.20241">Oviedo et al., Microsoft: energy per AI query</a> (2025)</li>
+              <li><a href="https://github.com/deepseek-ai/open-infra-index/blob/main/202502OpenSourceWeek/day_6_one_more_thing_deepseekV3R1_inference_system_overview.md">DeepSeek inference system overview</a> (2025)</li>
+              <li><a href="https://www.lmsys.org/blog/2025-05-05-large-scale-ep/">LMSYS: large-scale DeepSeek serving on H100</a> (2025)</li>
               <li><a href="https://epoch.ai/gradient-updates/how-much-energy-does-chatgpt-use">Epoch AI: How much energy does ChatGPT use?</a> (2025)</li>
               <li><a href="https://ecologits.ai/latest/methodology/llm_inference/">EcoLogits: LLM inference methodology</a></li>
               <li><a href="https://arxiv.org/abs/2508.15734">Elsworth et al., Google: Measuring the environmental impact of AI inference</a> (2025)</li>
