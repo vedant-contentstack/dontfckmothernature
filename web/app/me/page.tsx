@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CopyCommand } from "@/components/CopyCommand";
 import { Header } from "@/components/Header";
+import { LinkInfo } from "@/components/LinkInfo";
 import { Panels } from "@/components/Panels";
 import { DAILY, ONETIME, actionById, type Saving } from "@/lib/actions";
 import { COUNTRIES } from "@/lib/countries";
@@ -42,6 +43,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"footprint" | "sins">("footprint");
   const [busy, setBusy] = useState(false);
+  const [deleted, setDeleted] = useState(false);
   const today = localDate();
 
   const api = useCallback(
@@ -96,6 +98,20 @@ export default function Dashboard() {
     }
   };
 
+  const deleteAll = async () => {
+    setBusy(true);
+    try {
+      await api("/api/profile", { method: "DELETE" });
+      try { localStorage.removeItem(TOKEN_KEY); } catch {}
+      setDeleted(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (deleted) return <Deleted />;
   if (token === undefined) return <main className="wrap"><Header /></main>;
   if (!token) return <NoToken />;
 
@@ -113,12 +129,27 @@ export default function Dashboard() {
             <button type="button" role="tab" id="tab-sins" className="btn" aria-selected={tab === "sins"} onClick={() => setTab("sins")}>Clear your sins</button>
           </div>
           {tab === "footprint" ? (
-            <Footprint data={data} busy={busy} onShare={(share) => run(() => api("/api/profile", { method: "PATCH", body: JSON.stringify({ share }) }))} />
+            <Footprint data={data} busy={busy} onDelete={deleteAll} onShare={(share) => run(() => api("/api/profile", { method: "PATCH", body: JSON.stringify({ share }) }))} />
           ) : (
             <Sins data={data} busy={busy} today={today} api={api} run={run} />
           )}
         </>
       )}
+    </main>
+  );
+}
+
+function Deleted() {
+  return (
+    <main className="wrap">
+      <Header />
+      <section className="section">
+        <h1>Your data is deleted</h1>
+        <p className="lede">Your profile, usage history and logged savings have been removed from the server. This link no longer works.</p>
+        <p>The plugin on your machine still has the old token, so its syncs will now be refused and nothing new is stored. To remove it completely:</p>
+        <CopyCommand text="/plugin uninstall dontfckmothernature@dontfckmothernature" />
+        <CopyCommand text="rm -rf ~/.dontfck" />
+      </section>
     </main>
   );
 }
@@ -144,14 +175,15 @@ function Strip({ data }: { data: Summary }) {
     <div className={`strip bal-${state}`}>
       <span className="label">Balance</span>
       {FACTORS.map((f) => (
-        <span className="num" key={f.key}>{signed(data.balance.mid[f.key], 1)}<small>{f.unit}</small></span>
+        <span className="num" key={f.key}>{signed(data.balance.mid[f.key])}<small>{f.unit}</small></span>
       ))}
       {data.lastAt && <span className="small" style={{ marginLeft: "auto" }}>Latest usage {ago(data.lastAt)}</span>}
     </div>
   );
 }
 
-function Footprint({ data, busy, onShare }: { data: Summary; busy: boolean; onShare: (on: boolean) => void }) {
+function Footprint({ data, busy, onShare, onDelete }: { data: Summary; busy: boolean; onShare: (on: boolean) => void; onDelete: () => void }) {
+  const [confirm, setConfirm] = useState("");
   const state = balanceState(data.used.mid, data.saved.total);
   const shareUrl = data.shareSlug ? `${window.location.origin}/s/${data.shareSlug}` : null;
   const since = data.firstAt ? new Date(data.firstAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
@@ -213,6 +245,32 @@ function Footprint({ data, busy, onShare }: { data: Summary; busy: boolean; onSh
         ) : (
           <p className="muted">Sharing is off. Creating a link makes a public page with your used, saved and balance totals and nothing else.</p>
         )}
+      </section>
+
+      <section className="section">
+        <h2>Private link and share link</h2>
+        <p className="muted small">The address of this page is your private link. Share the share link instead.</p>
+        <LinkInfo />
+      </section>
+
+      <section className="section">
+        <h2>Delete my data</h2>
+        <form
+          className="form box"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (confirm === "DELETE") onDelete();
+          }}
+        >
+          <p className="field wide" style={{ margin: 0 }}>
+            Removes your profile, all usage history, logged savings and share link from the server. This can’t be undone. Type DELETE to confirm.
+          </p>
+          <label className="field">
+            <span className="label">Confirm</span>
+            <input id="delete-confirm" autoComplete="off" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="DELETE" />
+          </label>
+          <button type="submit" className="btn danger" disabled={busy || confirm !== "DELETE"}>Delete everything</button>
+        </form>
       </section>
     </>
   );

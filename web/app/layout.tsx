@@ -16,7 +16,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body>
         {children}
         <footer className="site-foot">
-          Created by: Vedant Karle (<a href="https://vedantkarle.in" target="_blank" rel="noopener noreferrer">vedantkarle.in</a>)
+          Created by: Vedant Karle (<a href="https://vedantkarle.in" target="_blank" rel="noopener noreferrer">vedantkarle.in</a>) · <a href="/privacy">Privacy</a> · <a href="/method">Method</a>
         </footer>
       </body>
     </html>

@@ -22,3 +22,13 @@ export async function PATCH(req: Request) {
   if (error) return Response.json({ error: "Could not save that change." }, { status: 500 });
   return Response.json(data);
 }
+
+// Deletes the caller's profile. Usage rows, devices and logged savings go with it (on delete cascade).
+// The profile is found only from the caller's own token, so no request can name another user.
+export async function DELETE(req: Request) {
+  const profile = await profileFromRequest(req);
+  if (!profile) return Response.json({ error: "Unknown token." }, { status: 401 });
+  const { error } = await db().from("profiles").delete().eq("id", profile.id);
+  if (error) return Response.json({ error: "Could not delete your data. Try again." }, { status: 500 });
+  return Response.json({ deleted: true });
+}

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { CopyCommand } from "@/components/CopyCommand";
 import { Header } from "@/components/Header";
 import { INSTALL } from "@/lib/site";
@@ -35,24 +36,14 @@ export default function Home() {
 
       <section className="section" id="method">
         <h2>How the numbers are worked out</h2>
-        <div className="box" style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10, maxWidth: "72ch" }}>
-          <p style={{ margin: 0 }}>
-            No AI company publishes energy per token, so every figure is an estimate. Tokens are weighted by type (output 1, input 0.2,
-            cache read 0.02), multiplied by an energy factor for the model size, then converted to CO₂ with the US grid average
-            (348 g/kWh) and to water with data-centre cooling plus the water used to generate the electricity.
-          </p>
-          <p style={{ margin: 0 }}>
-            The dashboard shows the mid estimate with a low–high range. Savings use the lowest published value for each action and are
-            capped at your country&rsquo;s average daily use.
-          </p>
-          <p className="muted small" style={{ margin: 0 }}>
-            Sources: Epoch AI, EcoLogits, Google&rsquo;s Gemini footprint paper (2025), Jegham et al. &ldquo;How Hungry is AI&rdquo;, EPA
-            WaterSense, BEE India, Ember, Poore &amp; Nemecek.
-          </p>
-        </div>
+        <p className="lede">
+          No AI company publishes energy per token, so every AI figure is an estimate from published research, shown with a low–high
+          range. Savings use the lowest published value for each action. The <Link href="/method">method page</Link> has every formula,
+          factor and source.
+        </p>
         <p className="muted small">
-          Privacy: only token counts, model names, timestamps and a hash of each log file path are uploaded. Prompt text, code and folder
-          names never leave your machine.
+          Only token counts, model names, dates and a hash of each log file path are uploaded. Prompts, code and folder names never leave
+          your machine. Details are in the <Link href="/privacy">privacy policy</Link>.
         </p>
       </section>
     </main>

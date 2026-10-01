@@ -23,7 +23,7 @@ export type Impact = { water: number; energy: number; co2: number }; // L, kWh, 
 type Tier = { label: string; whPer1kOut: Record<Band, number> };
 
 // Wh per 1K output tokens. Active-parameter estimates from EcoLogits, energy from Epoch AI's method.
-const TIERS = {
+export const TIERS = {
   haiku:  { label: "Claude Haiku",       whPer1kOut: { low: 0.06, mid: 0.13, high: 0.21 } },
   sonnet: { label: "Claude Sonnet",      whPer1kOut: { low: 0.26, mid: 0.52, high: 2.3 } },
   opus:   { label: "Claude Opus",        whPer1kOut: { low: 0.40, mid: 0.79, high: 6.2 } },
@@ -53,16 +53,16 @@ export function tierLabel(id: TierId) {
 }
 
 // Input tokens cost less than output; weights follow API price ratios.
-const R_IN_ANTHROPIC: Record<Band, number> = { low: 0.10, mid: 0.20, high: 0.35 };
-const R_IN_OPENAI: Record<Band, number> = { low: 0.10, mid: 0.125, high: 0.35 };
-const R_CACHE_READ: Record<Band, number> = { low: 0.05, mid: 0.10, high: 0.20 };
-const CACHE_WRITE = 1.25;
+export const R_IN_ANTHROPIC: Record<Band, number> = { low: 0.10, mid: 0.20, high: 0.35 };
+export const R_IN_OPENAI: Record<Band, number> = { low: 0.10, mid: 0.125, high: 0.35 };
+export const R_CACHE_READ: Record<Band, number> = { low: 0.05, mid: 0.10, high: 0.20 };
+export const CACHE_WRITE = 1.25;
 
 // Data centre grid, g CO2e per kWh: eGRID Virginia / US average / world (Ember 2025).
-const CARBON_G_PER_KWH: Record<Band, number> = { low: 269, mid: 348, high: 458 };
+export const CARBON_G_PER_KWH: Record<Band, number> = { low: 269, mid: 348, high: 458 };
 
 // Water per kWh = on-site WUE / PUE + off-site water for generation.
-const WATER_L_PER_KWH: Record<Band, number> = {
+export const WATER_L_PER_KWH: Record<Band, number> = {
   low: 0.15 / 1.09 + 3.14,
   mid: 0.30 / 1.15 + 4.35,
   high: 1.15 / 1.17 + 5.11,

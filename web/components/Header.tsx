@@ -8,7 +8,8 @@ export function Header() {
       </Link>
       <nav className="nav">
         <Link href="/#install">Install</Link>
-        <Link href="/#method">Method</Link>
+        <Link href="/method">Method</Link>
+        <Link href="/privacy">Privacy</Link>
         <Link href="/me">My dashboard</Link>
       </nav>
     </header>

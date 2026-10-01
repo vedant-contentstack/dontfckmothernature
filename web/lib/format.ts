@@ -7,15 +7,15 @@ export const FACTORS: { key: Factor; label: string; unit: string }[] = [
   { key: "co2", label: "CO₂", unit: "kg CO₂" },
 ];
 
-// `extra` adds decimal places, for places where small changes should stay visible.
-export function num(n: number, extra = 0): string {
+// One rule everywhere (strip, panels, share card): 2 decimals, or 1 from 1,000 up.
+export function num(n: number): string {
   const a = Math.abs(n);
-  const digits = (a === 0 ? 0 : a < 10 ? 2 : a < 100 ? 1 : 0) + (a === 0 ? 0 : extra);
+  const digits = a >= 1000 ? 1 : 2;
   return a.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-export function signed(n: number, extra = 0): string {
-  const s = num(n, extra);
+export function signed(n: number): string {
+  const s = num(n);
   if (s.replace(/[0.,]/g, "") === "") return s;
   return (n > 0 ? "+" : "−") + s;
 }

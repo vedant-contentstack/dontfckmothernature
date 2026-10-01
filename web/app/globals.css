@@ -67,6 +67,7 @@ h2 { font-weight: 700; font-size: 24px; letter-spacing: -0.02em; margin: 0; }
 .btn:active:not(:disabled), .btn[aria-pressed="true"], .btn[aria-selected="true"] { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--ink); }
 .btn[aria-pressed="true"], .btn[aria-selected="true"] { background: var(--ink); color: var(--paper); }
 .btn.go { background: var(--leaf); color: #111; }
+.btn.danger { background: var(--debt); color: #111; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--caret); outline-offset: 3px; }
 input, select { background: var(--card); border: 2px solid var(--ink); padding: 9px 10px; min-width: 0; }
@@ -129,6 +130,18 @@ td.r, th.r { text-align: right; }
 
 .error { border: var(--line) solid var(--ink); background: var(--debt); color: #111; padding: 12px 16px; font-weight: 600; }
 .card-img { width: 100%; height: auto; aspect-ratio: 1200 / 630; border: var(--line) solid var(--ink); box-shadow: var(--shadow); display: block; background: #fffdf5; }
+
+/* Long-form pages */
+.prose { display: flex; flex-direction: column; gap: 16px; max-width: 820px; }
+/* Flex children default to min-width:auto, which lets a wide table push the page past the screen. */
+.wrap > *, .prose > * { min-width: 0; }
+.prose h2 { margin-top: 20px; }
+.prose h3 { margin: 8px 0 0; font-size: 18px; }
+.prose p, .prose ul { margin: 0; max-width: 70ch; }
+.prose ul { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.prose code { font-family: var(--mono); font-size: .9em; }
+.formula { margin: 0; padding: 16px 18px; font-family: var(--mono); font-size: 13px; line-height: 1.6; overflow-x: auto; white-space: pre; }
+table.wrap-cells td { white-space: normal; min-width: 120px; vertical-align: top; }
 
 .site-foot { max-width: 1040px; margin: 0 auto; padding-block: 18px 32px; border-top: var(--line) solid var(--ink);
   font-family: var(--mono); font-weight: 700; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }

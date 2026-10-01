@@ -27,6 +27,7 @@ export default async function SharedPage({ params }: PageProps<"/s/[slug]">) {
       <div>
         <Link href="/#install" className="btn go">See your own numbers</Link>
       </div>
+      <p className="muted small">This is a read-only share page. It shows three totals and cannot change or delete anything.</p>
     </main>
   );
 }
