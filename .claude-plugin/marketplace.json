@@ -1,0 +1,13 @@
+{
+  "name": "dontfckmothernature",
+  "owner": {
+    "name": "Vedant Karle"
+  },
+  "plugins": [
+    {
+      "name": "dontfckmothernature",
+      "source": "./",
+      "description": "Water, energy and CO2 behind your Claude Code usage, and a checklist to pay it back."
+    }
+  ]
+}

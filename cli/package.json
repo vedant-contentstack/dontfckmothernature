@@ -1,0 +1,16 @@
+{
+  "name": "dontfckmothernature",
+  "version": "0.1.0",
+  "description": "Shows the water, energy and CO2 behind your Claude Code and Codex usage.",
+  "type": "module",
+  "bin": {
+    "dontfckmothernature": "bin/dfmn.mjs"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "license": "MIT"
+}
