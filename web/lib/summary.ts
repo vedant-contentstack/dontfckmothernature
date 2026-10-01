@@ -22,11 +22,11 @@ function minus(a: Impact, b: Impact): Impact {
 }
 
 export async function loadSummary(profile: Profile, today: string): Promise<Summary> {
-  const [usage, offsets] = await Promise.all([
-    db()
-      .from("usage_sessions")
-      .select("source, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, first_at, last_at")
-      .eq("user_id", profile.id),
+  const cols = "source, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, first_at, last_at";
+  // Lifetime usage = rolled-up totals + the per-day rows still inside the 35-day window.
+  const [totals, daily, offsets] = await Promise.all([
+    db().from("usage_totals").select(cols).eq("user_id", profile.id),
+    db().from("usage_daily").select(cols).eq("user_id", profile.id),
     db()
       .from("offset_logs")
       .select("id, kind, action_id, quantity, factor, amount, note, logged_on")
@@ -34,10 +34,15 @@ export async function loadSummary(profile: Profile, today: string): Promise<Summ
       .order("logged_on", { ascending: false })
       .order("id", { ascending: false }),
   ]);
-  if (usage.error) throw usage.error;
-  if (offsets.error) throw offsets.error;
+  for (const r of [totals, daily, offsets]) if (r.error) throw r.error;
 
-  const rows = (usage.data ?? []) as UsageRow[];
+  const rows = [...(totals.data ?? []), ...(daily.data ?? [])].map((r) => ({
+    ...r,
+    input_tokens: Number(r.input_tokens),
+    output_tokens: Number(r.output_tokens),
+    cache_write_tokens: Number(r.cache_write_tokens),
+    cache_read_tokens: Number(r.cache_read_tokens),
+  })) as UsageRow[];
   const logs = ((offsets.data ?? []) as OffsetLog[]).map((l) => ({
     ...l,
     quantity: Number(l.quantity),

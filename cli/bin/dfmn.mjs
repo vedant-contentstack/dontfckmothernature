@@ -15,7 +15,7 @@
 // Prompt text, code and folder names never leave the machine.
 
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -32,6 +32,7 @@ const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(HOME, ".claude");
 const CODEX_DIR = process.env.CODEX_HOME || path.join(HOME, ".codex");
 const SELF = fileURLToPath(import.meta.url);
 const BATCH = 500;
+const STATE_VERSION = 2; // bump to force a full rescan after the upload format changes
 
 // ---------- small helpers ----------
 
@@ -84,23 +85,22 @@ function parseClaude(file) {
     if (e?.type !== "assistant" || !m?.usage || !m.id || !m.model || m.model === "<synthetic>") continue;
     messages.set(m.id, { model: m.model, u: m.usage, ts: e.timestamp });
   }
-  const byModel = new Map();
+  const buckets = new Map();
   for (const { model, u, ts } of messages.values()) {
-    const r = byModel.get(model) ?? blank(model, ts);
+    const r = bucket(buckets, model, ts);
     r.input_tokens += u.input_tokens || 0;
     r.output_tokens += u.output_tokens || 0;
     r.cache_write_tokens += u.cache_creation_input_tokens || 0;
     r.cache_read_tokens += u.cache_read_input_tokens || 0;
     stamp(r, ts);
-    byModel.set(model, r);
   }
-  return [...byModel.values()];
+  return [...buckets.values()];
 }
 
 // Codex logs cumulative totals in token_count events. Take the difference between events and
 // give it to whichever model the current turn uses. Cached input is part of input_tokens there.
 function parseCodex(file) {
-  const byModel = new Map();
+  const buckets = new Map();
   let model = "gpt-5";
   let prev = null;
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
@@ -118,20 +118,27 @@ function parseCodex(file) {
     if (d("total_tokens") === 0 && d("input_tokens") === 0 && d("output_tokens") === 0) continue;
     const cached = d("cached_input_tokens");
     const written = d("cache_write_input_tokens");
-    const r = byModel.get(model) ?? blank(model, e.timestamp);
+    const r = bucket(buckets, model, e.timestamp);
     r.input_tokens += Math.max(0, d("input_tokens") - cached - written);
     r.output_tokens += d("output_tokens");
     r.cache_read_tokens += cached;
     r.cache_write_tokens += written;
     stamp(r, e.timestamp);
-    byModel.set(model, r);
   }
-  return [...byModel.values()];
+  return [...buckets.values()];
 }
 
-function blank(model, ts) {
+// One bucket per (model, UTC day). A past day never changes, which lets the server freeze old days.
+function bucket(buckets, model, ts) {
   const t = ts || new Date().toISOString();
-  return { model, input_tokens: 0, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, first_at: t, last_at: t };
+  const day = t.slice(0, 10);
+  const key = `${model}|${day}`;
+  let r = buckets.get(key);
+  if (!r) {
+    r = { model, day, input_tokens: 0, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, first_at: t, last_at: t };
+    buckets.set(key, r);
+  }
+  return r;
 }
 function stamp(r, ts) {
   if (!ts) return;
@@ -161,6 +168,15 @@ async function ensureToken() {
   return token;
 }
 
+// A random id per machine, so two laptops on one profile never overwrite each other's rows.
+function deviceId() {
+  const c = config();
+  if (c.deviceId) return c.deviceId;
+  const id = randomBytes(12).toString("base64url");
+  writeJson(CONFIG, { ...config(), deviceId: id });
+  return id;
+}
+
 // ---------- commands ----------
 
 function takeLock() {
@@ -176,7 +192,9 @@ async function sync({ quiet = true } = {}) {
   if (!takeLock()) { if (!quiet) console.log("A sync is already running."); return; }
   try {
     const token = await ensureToken();
-    const state = readJson(STATE, { files: {} });
+    const device = deviceId();
+    const saved = readJson(STATE, { files: {} });
+    const state = saved.v === STATE_VERSION ? saved : { v: STATE_VERSION, files: {} };
     const sources = [
       ["claude", walk(path.join(CLAUDE_DIR, "projects")), parseClaude],
       ["codex", [...walk(path.join(CODEX_DIR, "sessions")), ...walk(path.join(CODEX_DIR, "archived_sessions"))], parseCodex],
@@ -196,8 +214,13 @@ async function sync({ quiet = true } = {}) {
       }
     }
 
-    for (let i = 0; i < rows.length; i += BATCH) await post("/api/ingest", { rows: rows.slice(i, i + BATCH) }, token);
-    writeJson(STATE, { files: { ...state.files, ...seen }, lastSync: new Date().toISOString() });
+    // Always send at least one (possibly empty) batch so the server can roll up and freeze old days.
+    const batches = Math.max(1, Math.ceil(rows.length / BATCH));
+    for (let i = 0; i < batches; i++) {
+      const slice = rows.slice(i * BATCH, (i + 1) * BATCH);
+      await post("/api/ingest", { device_id: device, rows: slice, final: i === batches - 1 }, token);
+    }
+    writeJson(STATE, { v: STATE_VERSION, files: { ...state.files, ...seen }, lastSync: new Date().toISOString() });
     if (!quiet) console.log(`Synced ${rows.length} model totals from ${Object.keys(seen).length} log files.`);
   } catch (err) {
     log(`sync failed: ${err.message}`);

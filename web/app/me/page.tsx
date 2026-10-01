@@ -6,7 +6,7 @@ import { Header } from "@/components/Header";
 import { Panels } from "@/components/Panels";
 import { DAILY, ONETIME, actionById, type Saving } from "@/lib/actions";
 import { COUNTRIES } from "@/lib/countries";
-import { FACTORS, balanceState, num, shortTokens, signed, type Factor } from "@/lib/format";
+import { FACTORS, ago, balanceState, num, shortTokens, signed, type Factor } from "@/lib/format";
 import type { OffsetLog } from "@/lib/savings";
 import { INSTALL } from "@/lib/site";
 import type { Summary } from "@/lib/summary";
@@ -74,6 +74,16 @@ export default function Dashboard() {
     return () => { live = false; };
   }, [token, api, today]);
 
+  // Pick up new syncs while the tab is open and visible.
+  useEffect(() => {
+    if (!token) return;
+    const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      api(`/api/me?today=${today}`).then((d) => setData(d as Summary)).catch(() => {});
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [token, api, today]);
+
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -134,8 +144,9 @@ function Strip({ data }: { data: Summary }) {
     <div className={`strip bal-${state}`}>
       <span className="label">Balance</span>
       {FACTORS.map((f) => (
-        <span className="num" key={f.key}>{signed(data.balance.mid[f.key])}<small>{f.unit}</small></span>
+        <span className="num" key={f.key}>{signed(data.balance.mid[f.key], 1)}<small>{f.unit}</small></span>
       ))}
+      {data.lastAt && <span className="small" style={{ marginLeft: "auto" }}>Latest usage {ago(data.lastAt)}</span>}
     </div>
   );
 }
